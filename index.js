@@ -5,46 +5,29 @@ const axios = require("axios");
 const app = express();
 app.use(express.json());
 
-// 🔍 DEBUG AL INICIAR
-console.log("🔍 ===== DEBUG ENV =====");
-console.log("TWILIO_SID:", process.env.TWILIO_SID ? "OK" : "❌ NO");
-console.log("TWILIO_AUTH_TOKEN:", process.env.TWILIO_AUTH_TOKEN ? "OK" : "❌ NO");
-console.log("TWILIO_FROM:", process.env.TWILIO_FROM || "❌ NO");
-console.log("TWILIO_TO:", process.env.TWILIO_TO || "❌ NO");
-console.log("PORT:", process.env.PORT || "NO DEFINIDO");
-console.log("========================");
+// 👤 MAPEO AGENTES
+const AGENTES_MAP = {
+  12: "whatsapp:+5215543739673",
+  2: "whatsapp:+5215522222222"
+};
 
-// 🔹 Validación básica
-function validateEnv() {
-  if (
-    !process.env.TWILIO_SID ||
-    !process.env.TWILIO_AUTH_TOKEN ||
-    !process.env.TWILIO_FROM ||
-    !process.env.TWILIO_TO
-  ) {
-    console.error("❌ Faltan variables de entorno");
-    process.exit(1);
-  }
-}
+// 🧠 CONTROL
+const conversacionesAsignadas = new Set();
+const ultimaNotificacionMensaje = new Map();
 
-validateEnv();
+// ⏱️ TIEMPO ENTRE NOTIFICACIONES (ms)
+const COOLDOWN = 2 * 60 * 1000; // 2 minutos
 
-// 🔹 Función para enviar TEMPLATE
-async function sendTemplate(contentSid, variables) {
+// 🔹 ENVIAR TEMPLATE
+async function sendTemplate(to, contentSid, variables) {
   try {
-    console.log("📦 Enviando a Twilio...");
-    console.log("➡️ TO:", process.env.TWILIO_TO);
-    console.log("➡️ FROM:", process.env.TWILIO_FROM);
-    console.log("➡️ CONTENT SID:", contentSid);
-    console.log("➡️ VARIABLES:", variables);
-
     const params = new URLSearchParams();
-    params.append("To", process.env.TWILIO_TO);
+    params.append("To", to);
     params.append("From", process.env.TWILIO_FROM);
     params.append("ContentSid", contentSid);
     params.append("ContentVariables", JSON.stringify(variables));
 
-    const response = await axios.post(
+    await axios.post(
       `https://api.twilio.com/2010-04-01/Accounts/${process.env.TWILIO_SID}/Messages.json`,
       params,
       {
@@ -58,83 +41,99 @@ async function sendTemplate(contentSid, variables) {
       }
     );
 
-    console.log("✅ Mensaje enviado correctamente");
-    console.log("🆔 SID:", response.data.sid);
+    console.log(`✅ Enviado a ${to}`);
 
   } catch (error) {
-    console.error("❌ ERROR TWILIO:");
-    console.error("STATUS:", error.response?.status);
-    console.error("DATA:", error.response?.data || error.message);
+    console.error("❌ Error Twilio:");
+    console.error(error.response?.data || error.message);
   }
 }
 
-// 🔹 Webhook Chatwoot
+// 🔹 WEBHOOK
 app.post("/webhook/chatwoot", async (req, res) => {
-  console.log("➡️ POST /webhook/chatwoot");
-
   const event = req.body.event;
-  console.log("📩 Evento:", event);
-  console.log("📦 BODY:", JSON.stringify(req.body, null, 2));
+  const conversationId = req.body.conversation?.id;
 
   try {
 
-    // 🟢 NUEVO MENSAJE
-    if (event === "message_created") {
-      const mensaje = req.body.message?.content || "Sin mensaje";
-      const nombre = req.body.meta?.sender?.name || "Cliente";
+    // 🟡 ASIGNACIÓN
+    if (event === "conversation_updated") {
 
-      console.log("📤 Preparando template mensaje...");
+      const assignee = req.body.meta?.assignee;
+
+      if (!assignee?.id) return res.sendStatus(200);
+
+      const telefono = AGENTES_MAP[assignee.id];
+      if (!telefono) return res.sendStatus(200);
+
+      if (conversacionesAsignadas.has(conversationId)) {
+        return res.sendStatus(200);
+      }
+
+      conversacionesAsignadas.add(conversationId);
+
+      const contacto = req.body.meta?.sender?.name || "Cliente";
+
+      console.log("📤 Notificando asignación...");
 
       await sendTemplate(
-        "HX199f64110199488a4e9f8cd1d1cfe50c",
-        {
-          1: nombre,
-          2: mensaje,
-        }
+        telefono,
+        "HX893d4fe0222bc376845904ccb112c866",
+        { 1: contacto }
       );
     }
 
-    // 🟡 ASIGNACIÓN
-    if (event === "conversation_updated") {
-      const assignee = req.body.meta?.assignee?.name;
-      const contacto = req.body.meta?.sender?.name || "Cliente";
+    // 🟢 MENSAJE DEL CLIENTE
+    if (event === "message_created") {
 
-      if (assignee) {
-        console.log("📤 Preparando template asignación...");
+      const messageType = req.body.message_type;
 
-        await sendTemplate(
-          "HX893d4fe0222bc376845904ccb112c866",
-          {
-            1: contacto,
-          }
-        );
+      // 🚫 Solo mensajes entrantes
+      if (messageType !== "incoming") {
+        return res.sendStatus(200);
       }
+
+      const assigneeId = req.body.meta?.assignee?.id;
+      if (!assigneeId) return res.sendStatus(200);
+
+      const telefono = AGENTES_MAP[assigneeId];
+      if (!telefono) return res.sendStatus(200);
+
+      const ahora = Date.now();
+      const ultima = ultimaNotificacionMensaje.get(conversationId) || 0;
+
+      // 🚫 COOLDOWN
+      if (ahora - ultima < COOLDOWN) {
+        console.log("⛔ Cooldown activo");
+        return res.sendStatus(200);
+      }
+
+      ultimaNotificacionMensaje.set(conversationId, ahora);
+
+      const mensaje = req.body.message?.content || "Nuevo mensaje";
+      const nombre = req.body.meta?.sender?.name || "Cliente";
+
+      console.log("📤 Notificando nuevo mensaje...");
+
+      await sendTemplate(
+        telefono,
+        "HX199f64110199488a4e9f8cd1d1cfe50c",
+        {
+          1: nombre,
+          2: mensaje
+        }
+      );
     }
 
     res.sendStatus(200);
 
   } catch (error) {
-    console.error("❌ ERROR GENERAL:", error.message);
+    console.error("❌ ERROR:", error.message);
     res.sendStatus(500);
   }
 });
 
-// 🔹 Ruta de prueba manual
-app.get("/test", async (req, res) => {
-  console.log("🧪 Test manual");
-
-  await sendTemplate(
-    "HX199f64110199488a4e9f8cd1d1cfe50c",
-    {
-      1: "Axel",
-      2: "Mensaje de prueba manual",
-    }
-  );
-
-  res.send("✅ Test enviado");
-});
-
-// 🔹 PUERTO
+// 🔹 SERVER
 const PORT = process.env.PORT || 3000;
 
 app.listen(PORT, () => {
