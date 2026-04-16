@@ -14,6 +14,21 @@ console.log("TWILIO_TO:", process.env.TWILIO_TO || "❌ NO");
 console.log("PORT:", process.env.PORT || "NO DEFINIDO");
 console.log("========================");
 
+// 🔹 Validación básica
+function validateEnv() {
+  if (
+    !process.env.TWILIO_SID ||
+    !process.env.TWILIO_AUTH_TOKEN ||
+    !process.env.TWILIO_FROM ||
+    !process.env.TWILIO_TO
+  ) {
+    console.error("❌ Faltan variables de entorno");
+    process.exit(1);
+  }
+}
+
+validateEnv();
+
 // 🔹 Función para enviar TEMPLATE
 async function sendTemplate(contentSid, variables) {
   try {
@@ -23,30 +38,37 @@ async function sendTemplate(contentSid, variables) {
     console.log("➡️ CONTENT SID:", contentSid);
     console.log("➡️ VARIABLES:", variables);
 
-    await axios.post(
+    const params = new URLSearchParams();
+    params.append("To", process.env.TWILIO_TO);
+    params.append("From", process.env.TWILIO_FROM);
+    params.append("ContentSid", contentSid);
+    params.append("ContentVariables", JSON.stringify(variables));
+
+    const response = await axios.post(
       `https://api.twilio.com/2010-04-01/Accounts/${process.env.TWILIO_SID}/Messages.json`,
-      {
-        To: process.env.TWILIO_TO,
-        From: process.env.TWILIO_FROM,
-        ContentSid: contentSid,
-        ContentVariables: JSON.stringify(variables),
-      },
+      params,
       {
         auth: {
           username: process.env.TWILIO_SID,
           password: process.env.TWILIO_AUTH_TOKEN,
         },
+        headers: {
+          "Content-Type": "application/x-www-form-urlencoded",
+        },
       }
     );
 
     console.log("✅ Mensaje enviado correctamente");
+    console.log("🆔 SID:", response.data.sid);
+
   } catch (error) {
     console.error("❌ ERROR TWILIO:");
-    console.error(error.response?.data || error.message);
+    console.error("STATUS:", error.response?.status);
+    console.error("DATA:", error.response?.data || error.message);
   }
 }
 
-// 🔹 Webhook
+// 🔹 Webhook Chatwoot
 app.post("/webhook/chatwoot", async (req, res) => {
   console.log("➡️ POST /webhook/chatwoot");
 
@@ -55,6 +77,7 @@ app.post("/webhook/chatwoot", async (req, res) => {
   console.log("📦 BODY:", JSON.stringify(req.body, null, 2));
 
   try {
+
     // 🟢 NUEVO MENSAJE
     if (event === "message_created") {
       const mensaje = req.body.message?.content || "Sin mensaje";
@@ -89,10 +112,26 @@ app.post("/webhook/chatwoot", async (req, res) => {
     }
 
     res.sendStatus(200);
+
   } catch (error) {
     console.error("❌ ERROR GENERAL:", error.message);
     res.sendStatus(500);
   }
+});
+
+// 🔹 Ruta de prueba manual
+app.get("/test", async (req, res) => {
+  console.log("🧪 Test manual");
+
+  await sendTemplate(
+    "HX199f64110199488a4e9f8cd1d1cfe50c",
+    {
+      1: "Axel",
+      2: "Mensaje de prueba manual",
+    }
+  );
+
+  res.send("✅ Test enviado");
 });
 
 // 🔹 PUERTO
