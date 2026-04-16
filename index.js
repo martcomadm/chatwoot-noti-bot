@@ -5,78 +5,87 @@ const axios = require("axios");
 const app = express();
 app.use(express.json());
 
-// 🔹 Puerto dinámico (IMPORTANTE para EasyPanel)
-const PORT = process.env.PORT || 3001;
+// 🔹 Función para enviar TEMPLATE de WhatsApp
+async function sendTemplate(contentSid, variables) {
+  try {
+    await axios.post(
+      `https://api.twilio.com/2010-04-01/Accounts/${process.env.TWILIO_SID}/Messages.json`,
+      {
+        To: process.env.TWILIO_TO,
+        From: process.env.TWILIO_FROM,
+        ContentSid: contentSid,
+        ContentVariables: JSON.stringify(variables),
+      },
+      {
+        auth: {
+          username: process.env.TWILIO_SID,
+          password: process.env.TWILIO_AUTH_TOKEN,
+        },
+      }
+    );
 
-// 🔹 Ruta de prueba
-app.get("/", (req, res) => {
-  res.send("✅ Bot activo");
-});
+    console.log("✅ Mensaje enviado con template:", contentSid);
+  } catch (error) {
+    console.error("❌ Error enviando template:", error.response?.data || error.message);
+  }
+}
 
-// 🔹 Logger global (para debug)
-app.use((req, res, next) => {
-  console.log(`➡️ ${req.method} ${req.url}`);
-  next();
-});
-
-// 🔹 Webhook Chatwoot
+// 🔹 Webhook principal
 app.post("/webhook/chatwoot", async (req, res) => {
-  const event = req.body.event;
+  console.log("➡️ POST /webhook/chatwoot");
 
+  const event = req.body.event;
   console.log("📩 Evento recibido:", event);
 
   try {
+    // ===============================
+    // 🟢 NUEVO MENSAJE
+    // ===============================
     if (event === "message_created") {
-      const mensaje = req.body.message?.content || "Mensaje vacío";
+      const mensaje = req.body.message?.content || "Sin mensaje";
       const nombre = req.body.meta?.sender?.name || "Cliente";
 
-      await sendWhatsApp(`💬 ${nombre} dice:\n${mensaje}`);
+      console.log("📤 Notificando nuevo mensaje...");
+
+      await sendTemplate(
+        "HX199f64110199488a4e9f8cd1d1cfe50c", // Template nuevo mensaje
+        {
+          1: nombre,
+          2: mensaje,
+        }
+      );
     }
 
-    if (event === "conversation_created") {
-      const nombre = req.body.meta?.sender?.name || "Cliente";
-
-      await sendWhatsApp(`🆕 Nueva conversación de: ${nombre}`);
-    }
-
+    // ===============================
+    // 🟡 CONVERSACIÓN ASIGNADA
+    // ===============================
     if (event === "conversation_updated") {
-      const agente = req.body.conversation?.meta?.assignee?.name;
+      const assignee = req.body.meta?.assignee?.name;
+      const contacto = req.body.meta?.sender?.name || "Cliente";
 
-      if (agente) {
-        await sendWhatsApp(`👤 Conversación asignada a: ${agente}`);
+      // Solo cuando se asigna a alguien
+      if (assignee) {
+        console.log("📤 Notificando asignación...");
+
+        await sendTemplate(
+          "HX893d4fe0222bc376845904ccb112c866", // Template asignación
+          {
+            1: contacto,
+          }
+        );
       }
     }
 
     res.sendStatus(200);
   } catch (error) {
-    console.error("❌ Error:", error.response?.data || error.message);
+    console.error("❌ Error general:", error.message);
     res.sendStatus(500);
   }
 });
 
-// 🔹 Función Twilio
-async function sendWhatsApp(text) {
-  console.log("📤 Enviando mensaje:", text);
+// 🔹 Puerto dinámico (IMPORTANTE para EasyPanel)
+const PORT = process.env.PORT || 3000;
 
-  await axios.post(
-    `https://api.twilio.com/2010-04-01/Accounts/${process.env.TWILIO_SID}/Messages.json`,
-    new URLSearchParams({
-      From: process.env.TWILIO_FROM,
-      To: process.env.TWILIO_TO,
-      Body: text,
-    }),
-    {
-      auth: {
-        username: process.env.TWILIO_SID,
-        password: process.env.TWILIO_AUTH_TOKEN,
-      },
-    }
-  );
-
-  console.log("✅ Mensaje enviado correctamente");
-}
-
-// 🔹 Iniciar servidor
 app.listen(PORT, () => {
   console.log(`🚀 Bot corriendo en puerto ${PORT}`);
 });
