@@ -4,7 +4,7 @@ const app = express();
 
 app.use(express.json());
 
-// 🔐 TWILIO CONFIG
+// 🔐 TWILIO
 const accountSid = process.env.TWILIO_ACCOUNT_SID;
 const authToken = process.env.TWILIO_AUTH_TOKEN;
 
@@ -13,95 +13,92 @@ if (!accountSid || !authToken) {
   process.exit(1);
 }
 
-console.log("🚀 Iniciando bot...");
-console.log("SID:", accountSid ? "OK" : "FALTA");
-console.log("TOKEN:", authToken ? "OK" : "FALTA");
-
 const client = require('twilio')(accountSid, authToken);
 
-// 🧠 MAPA DE AGENTES (AJUSTA AQUÍ)
+console.log("🚀 Bot iniciado correctamente");
+
+// 📲 NÚMERO TWILIO
+const FROM = 'whatsapp:+5215535851799';
+
+// 🧠 MAPA DE AGENTES
 const agentes = {
-  12: 'whatsapp:+5215543739673', // 👈 TU número real
-  // agrega más si necesitas
+  12: 'whatsapp:+5215543739673',
 };
 
-// 🧠 CONTROL DE DUPLICADOS
-const notificados = new Set();
+// 🧠 CONTROL
+const notificadosMensaje = new Set();
+const notificadosAsignacion = new Set();
 
-// 🔥 WEBHOOK CHATWOOT
+// 🔥 WEBHOOK
 app.post('/webhook/chatwoot', async (req, res) => {
   const data = req.body;
 
-  console.log("🔥 EVENTO COMPLETO:");
+  console.log("🔥 EVENTO:");
   console.log(JSON.stringify(data, null, 2));
 
   try {
-    const evento = data.event;
-
-    // ✅ SOLO MENSAJES
-    if (evento !== 'message_created') {
-      console.log("⏭ Ignorado: no es message_created");
+    if (data.event !== 'message_created') {
       return res.sendStatus(200);
     }
 
-    // ✅ SOLO ENTRANTES
-    const tipoMensaje = data.message_type;
-
-    if (tipoMensaje !== "incoming") {
-      console.log("⏭ Ignorado: no es incoming");
+    if (data.message_type !== 'incoming') {
+      console.log("⏭ No es mensaje entrante");
       return res.sendStatus(200);
     }
 
-    // ✅ OBTENER CONVERSACIÓN
     const conversation = data.conversation;
-
-    if (!conversation) {
-      console.log("❌ No hay conversación");
-      return res.sendStatus(200);
-    }
-
-    // ✅ AGENTE ASIGNADO (CORREGIDO)
     const agenteId = conversation?.meta?.assignee?.id;
 
     if (!agenteId) {
-      console.log("⏭ Sin agente asignado");
+      console.log("⏭ Sin agente");
       return res.sendStatus(200);
     }
 
-    console.log("👤 Agente detectado:", agenteId);
-
-    // ✅ MAPEO
     const numeroAgente = agentes[agenteId];
 
     if (!numeroAgente) {
-      console.log("⚠️ Agente sin número configurado:", agenteId);
+      console.log("⚠️ Agente sin número");
       return res.sendStatus(200);
     }
 
-    // ✅ EVITAR DUPLICADOS
-    const clave = `${conversation.id}-${agenteId}`;
+    const convId = conversation.id;
 
-    if (notificados.has(clave)) {
-      console.log("⏭ Ya notificado:", clave);
+    // 🔥 1. NOTIFICACIÓN DE ASIGNACIÓN (UNA SOLA VEZ)
+    if (!notificadosAsignacion.has(convId)) {
+      console.log("👤 Enviando asignación...");
+
+      await client.messages.create({
+        from: FROM,
+        to: numeroAgente,
+        contentSid: 'HX893d4fe0222bc376845904ccb112c866'
+      });
+
+      notificadosAsignacion.add(convId);
+      console.log("✅ Asignación enviada");
+    }
+
+    // 🔥 2. NOTIFICACIÓN DE MENSAJE (SIN DUPLICADOS)
+    const claveMensaje = `${convId}-${data.id}`;
+
+    if (notificadosMensaje.has(claveMensaje)) {
+      console.log("⏭ Mensaje ya notificado");
       return res.sendStatus(200);
     }
 
-    notificados.add(clave);
+    console.log("📩 Enviando nuevo mensaje...");
 
-    console.log("📲 Enviando notificación a:", numeroAgente);
-
-    // 📩 ENVIAR WHATSAPP
-    const response = await client.messages.create({
-      from: 'whatsapp:+14155238886', // ⚠️ Sandbox Twilio
+    await client.messages.create({
+      from: FROM,
       to: numeroAgente,
-      body: `📩 Nuevo mensaje asignado\n\n🆔 Conversación: ${conversation.id}`
+      contentSid: 'HX199f64110199488a4e9f8cd1d1cfe50c'
     });
 
-    console.log("✅ Notificación enviada");
-    console.log("SID mensaje:", response.sid);
+    notificadosMensaje.add(claveMensaje);
+
+    console.log("✅ Mensaje enviado");
 
   } catch (error) {
-    console.error("❌ ERROR GENERAL:");
+    console.error("❌ ERROR:");
     console.error(error.message);
 
     if (error.code) {
