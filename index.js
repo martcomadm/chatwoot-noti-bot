@@ -97,7 +97,7 @@ app.post('/webhook/chatwoot', async (req, res) => {
       console.log("📩 Notificando mensaje a", agenteId);
 
       await client.messages.create({
-        messagingServiceSid: process.env.TWILIO_ACCOUNT_SID,
+        messagingServiceSid: process.env.TWILIO_MESSAGING_SERVICE_SID,
         to: numeroAgente,
         contentSid: 'HX199f64110199488a4e9f8cd1d1cfe50c',
         contentVariables: "{}"
