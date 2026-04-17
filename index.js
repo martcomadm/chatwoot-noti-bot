@@ -1,186 +1,95 @@
-require("dotenv").config();
-const express = require("express");
-const axios = require("axios");
+import express from "express";
+import dotenv from "dotenv";
+import twilio from "twilio";
+
+dotenv.config();
 
 const app = express();
 app.use(express.json());
 
-// 👤 MAPEO AGENTES (AJUSTA ESTO)
-const AGENTES_MAP = {
-  12: "whatsapp:+5215543739673",
-  2: "whatsapp:+5215522222222"
+const client = twilio(
+  process.env.TWILIO_ACCOUNT_SID,
+  process.env.TWILIO_AUTH_TOKEN
+);
+
+// 📱 MAPA DE AGENTES (EDITA AQUÍ)
+const AGENT_PHONE_MAP = {
+  12: "whatsapp:+52TU_NUMERO_AQUI",
+  // ejemplo:
+  // 15: "whatsapp:+5215512345678"
 };
 
-// 🧠 CONTROL
-const conversacionesAsignadas = new Set();
-const ultimaNotificacionMensaje = new Map();
+// 🧠 MEMORIA para evitar spam
+const notifiedMessages = new Set();
 
-const COOLDOWN = 2 * 60 * 1000;
-
-// 🔹 ENVIAR TEMPLATE
-async function sendTemplate(to, contentSid, variables) {
-  try {
-    console.log("📦 Enviando a Twilio...");
-    console.log("➡️ TO:", to);
-    console.log("➡️ FROM:", process.env.TWILIO_FROM);
-
-    const params = new URLSearchParams();
-    params.append("To", to);
-    params.append("From", process.env.TWILIO_FROM);
-    params.append("ContentSid", contentSid);
-    params.append("ContentVariables", JSON.stringify(variables));
-
-    const response = await axios.post(
-      `https://api.twilio.com/2010-04-01/Accounts/${process.env.TWILIO_SID}/Messages.json`,
-      params,
-      {
-        auth: {
-          username: process.env.TWILIO_SID,
-          password: process.env.TWILIO_AUTH_TOKEN,
-        },
-        headers: {
-          "Content-Type": "application/x-www-form-urlencoded",
-        },
-      }
-    );
-
-    console.log("✅ Twilio OK:", response.data.sid);
-
-  } catch (error) {
-    console.error("❌ ERROR TWILIO:");
-    console.error(error.response?.data || error.message);
-  }
-}
-
-// 🔹 WEBHOOK DEBUG TOTAL
 app.post("/webhook/chatwoot", async (req, res) => {
   console.log("\n==============================");
   console.log("🔥 WEBHOOK RECIBIDO");
   console.log("==============================");
 
-  console.log("📦 BODY COMPLETO:");
-  console.log(JSON.stringify(req.body, null, 2));
+  const body = req.body;
 
-  const event = req.body.event;
-  const messageType = req.body.message_type;
-  const conversationId = req.body.conversation?.id;
+  console.log("📊 VARIABLES CLAVE:");
+  console.log("EVENT:", body.event);
+  console.log("MESSAGE TYPE:", body.message_type);
+  console.log("CONVERSATION ID:", body.conversation?.id);
 
-  console.log("\n📊 VARIABLES CLAVE:");
-  console.log("EVENT:", event);
-  console.log("MESSAGE TYPE:", messageType);
-  console.log("CONVERSATION ID:", conversationId);
+  // 🚨 SOLO mensajes entrantes
+  if (body.event !== "message_created") return res.sendStatus(200);
+  if (body.message_type !== "incoming") return res.sendStatus(200);
 
-  // 🔍 DETECTAR AGENTE DESDE VARIOS LUGARES
-  const assignee =
-    req.body.meta?.assignee ||
-    req.body.conversation?.assignee ||
-    req.body.assignee;
+  const messageId = body.id;
+
+  // 🚫 evitar duplicados
+  if (notifiedMessages.has(messageId)) {
+    console.log("⛔ MENSAJE YA NOTIFICADO");
+    return res.sendStatus(200);
+  }
+
+  // ✅ obtener assignee correctamente
+  const assignee = body.conversation?.meta?.assignee;
+  const assigneeId = assignee?.id;
 
   console.log("\n👤 ASSIGNEE DETECTADO:");
   console.log(assignee);
-
-  const assigneeId = assignee?.id;
   console.log("🆔 ASSIGNEE ID:", assigneeId);
 
-  const telefono = AGENTES_MAP[assigneeId];
-  console.log("📱 TELEFONO MAP:", telefono);
+  if (!assigneeId) {
+    console.log("⛔ SIN AGENTE → ignorado");
+    return res.sendStatus(200);
+  }
+
+  const agentPhone = AGENT_PHONE_MAP[assigneeId];
+
+  console.log("📱 TELEFONO MAP:", agentPhone);
+
+  if (!agentPhone) {
+    console.log("⛔ AGENTE SIN TELEFONO CONFIGURADO");
+    return res.sendStatus(200);
+  }
 
   try {
+    console.log("📨 ENVIANDO WHATSAPP...");
 
-    // ===============================
-    // 🟡 EVENTO: ASIGNACIÓN
-    // ===============================
-    if (event === "conversation_updated") {
-      console.log("\n🟡 EVENTO: CONVERSATION UPDATED");
+    await client.messages.create({
+      from: process.env.TWILIO_WHATSAPP_NUMBER,
+      to: agentPhone,
+      contentSid: "HX199f64110199488a4e9f8cd1d1cfe50c", // template de mensaje nuevo
+    });
 
-      if (!assigneeId) {
-        console.log("⛔ SIN AGENTE → no se notifica");
-        return res.sendStatus(200);
-      }
+    console.log("✅ NOTIFICACIÓN ENVIADA");
 
-      if (!telefono) {
-        console.log("⛔ AGENTE NO MAPEADO");
-        return res.sendStatus(200);
-      }
-
-      if (conversacionesAsignadas.has(conversationId)) {
-        console.log("⛔ YA NOTIFICADO ANTES");
-        return res.sendStatus(200);
-      }
-
-      conversacionesAsignadas.add(conversationId);
-
-      const contacto = req.body.meta?.sender?.name || "Cliente";
-
-      console.log("📤 ENVIANDO TEMPLATE ASIGNACIÓN...");
-
-      await sendTemplate(
-        telefono,
-        "HX893d4fe0222bc376845904ccb112c866",
-        { 1: contacto }
-      );
-    }
-
-    // ===============================
-    // 🟢 EVENTO: MENSAJE
-    // ===============================
-    if (event === "message_created") {
-      console.log("\n🟢 EVENTO: MESSAGE CREATED");
-
-      if (messageType !== "incoming") {
-        console.log("⛔ NO ES INCOMING → ignorado");
-        return res.sendStatus(200);
-      }
-
-      if (!assigneeId) {
-        console.log("⛔ SIN AGENTE → ignorado");
-        return res.sendStatus(200);
-      }
-
-      if (!telefono) {
-        console.log("⛔ AGENTE NO MAPEADO");
-        return res.sendStatus(200);
-      }
-
-      const ahora = Date.now();
-      const ultima = ultimaNotificacionMensaje.get(conversationId) || 0;
-
-      console.log("⏱️ COOLDOWN CHECK:", ahora - ultima);
-
-      if (ahora - ultima < COOLDOWN) {
-        console.log("⛔ COOLDOWN ACTIVO");
-        return res.sendStatus(200);
-      }
-
-      ultimaNotificacionMensaje.set(conversationId, ahora);
-
-      const mensaje = req.body.message?.content || "Nuevo mensaje";
-      const nombre = req.body.meta?.sender?.name || "Cliente";
-
-      console.log("📤 ENVIANDO TEMPLATE MENSAJE...");
-
-      await sendTemplate(
-        telefono,
-        "HX199f64110199488a4e9f8cd1d1cfe50c",
-        {
-          1: nombre,
-          2: mensaje
-        }
-      );
-    }
-
-    console.log("\n✅ FIN PROCESO");
-    res.sendStatus(200);
+    // guardar como enviado
+    notifiedMessages.add(messageId);
 
   } catch (error) {
-    console.error("❌ ERROR GENERAL:", error.message);
-    res.sendStatus(500);
+    console.error("❌ ERROR TWILIO:", error.message);
   }
+
+  res.sendStatus(200);
 });
 
-// 🔹 SERVER
 const PORT = process.env.PORT || 3000;
-
 app.listen(PORT, () => {
   console.log(`🚀 Bot corriendo en puerto ${PORT}`);
 });
