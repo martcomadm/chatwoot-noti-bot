@@ -58,7 +58,8 @@ app.post('/webhook/chatwoot', async (req, res) => {
         await client.messages.create({
           from: FROM,
           to: numeroAgente,
-          contentSid: 'HX893d4fe0222bc376845904ccb112c866'
+          contentSid: 'HX893d4fe0222bc376845904ccb112c866',
+          contentVariables: "{}"
         });
 
         notificadosAsignacion.add(convId);
@@ -98,7 +99,8 @@ app.post('/webhook/chatwoot', async (req, res) => {
       await client.messages.create({
         from: FROM,
         to: numeroAgente,
-        contentSid: 'HX199f64110199488a4e9f8cd1d1cfe50c'
+        contentSid: 'HX199f64110199488a4e9f8cd1d1cfe50c',
+        contentVariables: "{}"
       });
 
       notificadosMensaje.add(clave);
