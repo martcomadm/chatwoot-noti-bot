@@ -39,7 +39,7 @@ console.log("TOKEN:", process.env.TWILIO_AUTH_TOKEN ? "OK" : "FALTA");
 // =============================
 // WEBHOOK CHATWOOT
 // =============================
-app.post('/webhook', async (req, res) => {
+app.post('/webhook/chatwoot', async (req, res) => {
   try {
     const evento = req.body.event;
     const conversation = req.body.conversation;
