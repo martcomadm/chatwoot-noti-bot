@@ -1,78 +1,134 @@
-require("dotenv").config();
+require('dotenv').config();
 
-const express = require("express");
-const twilio = require("twilio");
+const express = require('express');
+const twilio = require('twilio');
 
 const app = express();
 app.use(express.json());
 
+// =============================
+// CONFIG TWILIO
+// =============================
 const client = twilio(
   process.env.TWILIO_ACCOUNT_SID,
   process.env.TWILIO_AUTH_TOKEN
 );
 
-// 📱 MAPA DE AGENTES
-const AGENT_PHONE_MAP = {
-  12: "whatsapp:+5215543739673", // ← tu número
+// =============================
+// MAPA DE AGENTES (EDITA ESTO)
+// =============================
+const AGENTES = {
+  // agent_id : whatsapp
+  12: "whatsapp:+5215543739673",
+  2: "whatsapp:+5215522222222",
 };
 
-// 🧠 MEMORIA anti spam
-const notifiedMessages = new Set();
+// =============================
+// CONTROL PARA EVITAR DUPLICADOS
+// =============================
+const conversacionesNotificadas = new Set();
+const mensajesNotificados = new Set();
 
-app.post("/webhook/chatwoot", async (req, res) => {
-  console.log("\n==============================");
-  console.log("🔥 WEBHOOK RECIBIDO");
-  console.log("==============================");
+// =============================
+// DEBUG INICIAL
+// =============================
+console.log("🚀 Iniciando bot...");
+console.log("SID:", process.env.TWILIO_ACCOUNT_SID ? "OK" : "FALTA");
+console.log("TOKEN:", process.env.TWILIO_AUTH_TOKEN ? "OK" : "FALTA");
 
-  const body = req.body;
-
-  console.log("EVENT:", body.event);
-  console.log("TYPE:", body.message_type);
-
-  if (body.event !== "message_created") return res.sendStatus(200);
-  if (body.message_type !== "incoming") return res.sendStatus(200);
-
-  const messageId = body.id;
-
-  if (notifiedMessages.has(messageId)) {
-    console.log("⛔ YA NOTIFICADO");
-    return res.sendStatus(200);
-  }
-
-  const assignee = body.conversation?.meta?.assignee;
-  const assigneeId = assignee?.id;
-
-  console.log("ASSIGNEE ID:", assigneeId);
-
-  if (!assigneeId) {
-    console.log("⛔ SIN AGENTE");
-    return res.sendStatus(200);
-  }
-
-  const agentPhone = AGENT_PHONE_MAP[assigneeId];
-
-  if (!agentPhone) {
-    console.log("⛔ SIN TELEFONO CONFIGURADO");
-    return res.sendStatus(200);
-  }
-
+// =============================
+// WEBHOOK CHATWOOT
+// =============================
+app.post('/webhook', async (req, res) => {
   try {
-    await client.messages.create({
-      from: process.env.TWILIO_WHATSAPP_NUMBER,
-      to: agentPhone,
-      contentSid: "HX199f64110199488a4e9f8cd1d1cfe50c",
-    });
+    const evento = req.body.event;
+    const conversation = req.body.conversation;
+    const message = req.body.message;
 
-    console.log("✅ NOTIFICACIÓN ENVIADA");
-    notifiedMessages.add(messageId);
+    console.log("📩 Evento recibido:", evento);
 
-  } catch (err) {
-    console.error("❌ ERROR:", err.message);
+    // =============================
+    // 1. CUANDO SE ASIGNA CONVERSACIÓN
+    // =============================
+    if (evento === "conversation_updated" && conversation?.assignee_id) {
+      const convId = conversation.id;
+      const agenteId = conversation.assignee_id;
+
+      console.log("👤 Asignación detectada:", convId, "->", agenteId);
+
+      // evitar duplicados
+      if (conversacionesNotificadas.has(convId)) {
+        console.log("⚠️ Ya notificado antes");
+        return res.sendStatus(200);
+      }
+
+      const numeroAgente = AGENTES[agenteId];
+
+      if (!numeroAgente) {
+        console.log("❌ Agente sin número configurado:", agenteId);
+        return res.sendStatus(200);
+      }
+
+      await client.messages.create({
+        from: process.env.TWILIO_WHATSAPP_NUMBER,
+        to: numeroAgente,
+        contentSid: "HX199f64110199488a4e9f8cd1d1cfe50c"
+      });
+
+      console.log("✅ Notificación enviada al agente");
+
+      conversacionesNotificadas.add(convId);
+    }
+
+    // =============================
+    // 2. CUANDO CLIENTE RESPONDE
+    // =============================
+    if (evento === "message_created" && message) {
+      const convId = message.conversation_id;
+
+      // SOLO mensajes entrantes (cliente)
+      if (message.message_type !== 0) {
+        return res.sendStatus(200);
+      }
+
+      console.log("💬 Mensaje de cliente en conversación:", convId);
+
+      // evitar duplicados
+      if (mensajesNotificados.has(message.id)) {
+        console.log("⚠️ Mensaje ya notificado");
+        return res.sendStatus(200);
+      }
+
+      const agenteId = req.body.conversation?.assignee_id;
+      const numeroAgente = AGENTES[agenteId];
+
+      if (!numeroAgente) {
+        console.log("❌ No hay agente asignado");
+        return res.sendStatus(200);
+      }
+
+      await client.messages.create({
+        from: process.env.TWILIO_WHATSAPP_NUMBER,
+        to: numeroAgente,
+        contentSid: "HX199f64110199488a4e9f8cd1d1cfe50c"
+      });
+
+      console.log("📨 Notificación de nuevo mensaje enviada");
+
+      mensajesNotificados.add(message.id);
+    }
+
+    res.sendStatus(200);
+
+  } catch (error) {
+    console.error("💥 ERROR:", error.message);
+    res.sendStatus(500);
   }
-
-  res.sendStatus(200);
 });
 
+// =============================
+// SERVER
+// =============================
 const PORT = process.env.PORT || 3000;
 
 app.listen(PORT, () => {
