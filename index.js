@@ -5,113 +5,115 @@ const app = express();
 app.use(express.json());
 
 // 🔐 TWILIO
-const accountSid = process.env.TWILIO_ACCOUNT_SID;
-const authToken = process.env.TWILIO_AUTH_TOKEN;
+const client = require('twilio')(
+  process.env.TWILIO_ACCOUNT_SID,
+  process.env.TWILIO_AUTH_TOKEN
+);
 
-if (!accountSid || !authToken) {
-  console.error("❌ Faltan variables de entorno de Twilio");
-  process.exit(1);
-}
-
-const client = require('twilio')(accountSid, authToken);
-
-console.log("🚀 Bot iniciado correctamente");
-
-// 📲 NÚMERO TWILIO
 const FROM = 'whatsapp:+5215535851799';
 
 // 🧠 MAPA DE AGENTES
 const agentes = {
   12: 'whatsapp:+5215543739673',
+  16: 'whatsapp:+52XXXXXXXXXX', // ← AGREGA AQUÍ
 };
 
 // 🧠 CONTROL
 const notificadosMensaje = new Set();
 const notificadosAsignacion = new Set();
 
-// 🔥 WEBHOOK
 app.post('/webhook/chatwoot', async (req, res) => {
   const data = req.body;
 
-  console.log("🔥 EVENTO:");
-  console.log(JSON.stringify(data, null, 2));
+  console.log("🔥 EVENTO:", data.event);
 
   try {
-    if (data.event !== 'message_created') {
+
+    // =====================================================
+    // 🔥 1. DETECTAR ASIGNACIÓN REAL
+    // =====================================================
+    if (data.event === 'conversation_updated') {
+
+      const cambios = data.changed_attributes || [];
+
+      const cambioAsignacion = cambios.find(c => c.assignee_id);
+
+      if (cambioAsignacion) {
+
+        const agenteId = cambioAsignacion.assignee_id.current_value;
+        const numeroAgente = agentes[agenteId];
+        const convId = data.id;
+
+        if (!numeroAgente) {
+          console.log("⚠️ Agente sin número:", agenteId);
+          return res.sendStatus(200);
+        }
+
+        if (notificadosAsignacion.has(convId)) {
+          return res.sendStatus(200);
+        }
+
+        console.log("👤 Enviando asignación a", agenteId);
+
+        await client.messages.create({
+          from: FROM,
+          to: numeroAgente,
+          contentSid: 'HX893d4fe0222bc376845904ccb112c866'
+        });
+
+        notificadosAsignacion.add(convId);
+
+        console.log("✅ Asignación enviada");
+      }
+
       return res.sendStatus(200);
     }
 
-    if (data.message_type !== 'incoming') {
-      console.log("⏭ No es mensaje entrante");
-      return res.sendStatus(200);
-    }
+    // =====================================================
+    // 🔥 2. MENSAJES ENTRANTES
+    // =====================================================
+    if (data.event === 'message_created') {
 
-    const conversation = data.conversation;
-    const agenteId = conversation?.meta?.assignee?.id;
+      if (data.message_type !== 'incoming') {
+        return res.sendStatus(200);
+      }
 
-    if (!agenteId) {
-      console.log("⏭ Sin agente");
-      return res.sendStatus(200);
-    }
+      const agenteId = data.conversation?.meta?.assignee?.id;
+      const numeroAgente = agentes[agenteId];
+      const convId = data.conversation?.id;
 
-    const numeroAgente = agentes[agenteId];
+      if (!agenteId || !numeroAgente) {
+        console.log("⚠️ Sin agente válido");
+        return res.sendStatus(200);
+      }
 
-    if (!numeroAgente) {
-      console.log("⚠️ Agente sin número");
-      return res.sendStatus(200);
-    }
+      const clave = `${convId}-${data.id}`;
 
-    const convId = conversation.id;
+      if (notificadosMensaje.has(clave)) {
+        return res.sendStatus(200);
+      }
 
-    // 🔥 1. NOTIFICACIÓN DE ASIGNACIÓN (UNA SOLA VEZ)
-    if (!notificadosAsignacion.has(convId)) {
-      console.log("👤 Enviando asignación...");
+      console.log("📩 Notificando mensaje a", agenteId);
 
       await client.messages.create({
         from: FROM,
         to: numeroAgente,
-        contentSid: 'HX893d4fe0222bc376845904ccb112c866'
+        contentSid: 'HX199f64110199488a4e9f8cd1d1cfe50c'
       });
 
-      notificadosAsignacion.add(convId);
-      console.log("✅ Asignación enviada");
+      notificadosMensaje.add(clave);
+
+      console.log("✅ Mensaje enviado");
     }
-
-    // 🔥 2. NOTIFICACIÓN DE MENSAJE (SIN DUPLICADOS)
-    const claveMensaje = `${convId}-${data.id}`;
-
-    if (notificadosMensaje.has(claveMensaje)) {
-      console.log("⏭ Mensaje ya notificado");
-      return res.sendStatus(200);
-    }
-
-    console.log("📩 Enviando nuevo mensaje...");
-
-    await client.messages.create({
-      from: FROM,
-      to: numeroAgente,
-      contentSid: 'HX199f64110199488a4e9f8cd1d1cfe50c'
-    });
-
-    notificadosMensaje.add(claveMensaje);
-
-    console.log("✅ Mensaje enviado");
 
   } catch (error) {
-    console.error("❌ ERROR:");
-    console.error(error.message);
-
-    if (error.code) {
-      console.error("Código Twilio:", error.code);
-    }
+    console.error("❌ ERROR:", error.message);
   }
 
   res.sendStatus(200);
 });
 
 // 🚀 SERVER
-const PORT = 3000;
-
-app.listen(PORT, () => {
-  console.log(`🚀 Bot corriendo en puerto ${PORT}`);
+app.listen(3000, () => {
+  console.log("🚀 Bot corriendo en puerto 3000");
 });
