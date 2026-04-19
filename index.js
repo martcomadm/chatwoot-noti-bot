@@ -14,25 +14,8 @@ const FROM = 'whatsapp:+5215535851799';
 
 // 🧠 MAPA DE AGENTES
 const agentes = {
-  16: 'whatsapp:+5215625856642',
-  17: 'whatsapp:+5215533970724',
-  18: 'whatsapp:+5215664586278',
-  19: 'whatsapp:+5215541743893',
-  20: 'whatsapp:+5215577862602',
-  23: 'whatsapp:+5215638691213',
-  24: 'whatsapp:+5217297329867',
-  25: 'whatsapp:+5215661700066',
-  26: 'whatsapp:+5215570513544',
-  27: 'whatsapp:+5215646033372',
-  28: 'whatsapp:+5215549569516',
-  30: 'whatsapp:+5215528023733',
-  31: 'whatsapp:+5215513747267',
-  32: 'whatsapp:+5215659182715',
-  34: 'whatsapp:+5215564356459',
-  35: 'whatsapp:+5215661010556',
-  36: 'whatsapp:+5215534958925',
-  37: 'whatsapp:+5215586785929',
-  38: 'whatsapp:+5215563323834',// ← AGREGA AQUÍ
+  12: 'whatsapp:+5215543739673',
+  // ← AGREGA AQUÍ
 };
 
 // 🧠 CONTROL
