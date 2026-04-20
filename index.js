@@ -91,47 +91,6 @@ app.post('/webhook/chatwoot', async (req, res) => {
     // =====================================================
     // 🔥 2. MENSAJES ENTRANTES
     // =====================================================
-    if (data.event === 'message_created') {
-
-      if (data.message_type !== 'incoming') {
-        return res.sendStatus(200);
-      }
-
-      const agenteId = data.conversation?.meta?.assignee?.id;
-      const numeroAgente = agentes[agenteId];
-      const convId = data.conversation?.id;
-
-      if (!agenteId || !numeroAgente) {
-        console.log("⚠️ Sin agente válido");
-        return res.sendStatus(200);
-      }
-
-      const clave = `${convId}-${data.id}`;
-
-      if (notificadosMensaje.has(clave)) {
-        return res.sendStatus(200);
-      }
-
-      console.log("📩 Notificando mensaje a", agenteId);
-
-      await client.messages.create({
-        from: FROM,
-        to: numeroAgente,
-        contentSid: 'HXe4e0a3b0ab8f4cc52721959dea8c9e18',
-        contentVariables: "{}"
-      });
-
-      notificadosMensaje.add(clave);
-
-      console.log("✅ Mensaje enviado");
-    }
-
-  } catch (error) {
-    console.error("❌ ERROR:", error.message);
-  }
-
-  res.sendStatus(200);
-});
 
 // 🚀 SERVER
 app.listen(3000, () => {
