@@ -119,7 +119,7 @@ app.post('/webhook/chatwoot', async (req, res) => {
       await client.messages.create({
         from: FROM,
         to: numeroAgente,
-        contentSid: '44',
+        contentSid: 'HXe4e0a3b0ab8f4cc52721959dea8c9e18',
         contentVariables: "{}"
       });
 
