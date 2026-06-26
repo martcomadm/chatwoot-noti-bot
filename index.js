@@ -10,7 +10,7 @@ const client = require('twilio')(
   process.env.TWILIO_AUTH_TOKEN
 );
 
-const FROM = 'whatsapp:+5215535851799';
+const FROM = 'whatsapp:+5215662751852';
 
 // 🧠 MAPA DE AGENTES
 const agentes = {
@@ -80,7 +80,7 @@ app.post('/webhook/chatwoot', async (req, res) => {
         await client.messages.create({
           from: FROM,
           to: numeroAgente,
-          contentSid: 'HX893d4fe0222bc376845904ccb112c866',
+          contentSid: 'HX66719ac2ff5eaf71cf9dfed0cfb22fd7',
           contentVariables: "{}"
         });
 
@@ -121,7 +121,7 @@ app.post('/webhook/chatwoot', async (req, res) => {
       await client.messages.create({
         from: FROM,
         to: numeroAgente,
-        contentSid: 'HXe4e0a3b0ab8f4cc52721959dea8c9e18',
+        contentSid: 'HX75c4a950a34d91bcc8984b923228e169',
         contentVariables: "{}"
       });
 
