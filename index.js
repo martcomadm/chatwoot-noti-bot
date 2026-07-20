@@ -14,7 +14,6 @@ const FROM = 'whatsapp:+5215662751852';
 
 // 🧠 MAPA DE AGENTES
 const agentes = {
-  12: 'whatsapp:+5215543739673',
   16: 'whatsapp:+5215625856642',
   17: 'whatsapp:+5215533970724',
   18: 'whatsapp:+5215664586278',
