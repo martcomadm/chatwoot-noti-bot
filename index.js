@@ -42,6 +42,7 @@ const agentes = {
   48: 'whatsapp:+5215641006202',
   49: 'whatsapp:+5215540225717',
   54: 'whatsapp:+5215564356459',
+  55: 'whatsapp:+5215652013424',
   // ← AGREGA AQUÍ
 };
 
